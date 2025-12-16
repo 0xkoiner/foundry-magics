@@ -742,3 +742,315 @@ Key Takeaways
 7. Only for testing = Never use in production code
 
 Bottom line: stdStorage abstracts away complex storage slot calculations, making your tests cleaner and more maintainable!
+
+## stdStorage requires a PUBLIC or EXTERNAL function to work!
+
+- ✅ Public - Works perfectly
+- ✅ External - Works perfectly
+- ⚠️ Internal - stdStorage won't work (no getter), but vm.store() will
+- ⚠️ Private - stdStorage won't work (no getter), but vm.store() will
+- ✅ View/Pure - These are about mutability, not visibility - they work fine with stdStorage
+
+Why? The .sig() Method Needs a Callable Function
+
+stdStorage works by:
+1. Calling the function you specify in .sig()
+2. Tracing which storage slot that function reads
+3. Manipulating that slot directly
+
+If there's no public getter, stdStorage can't call it!
+
+Examples by Visibility
+
+1. Public Variable (✅ Works)
+```solidity
+contract MyContract {
+    uint256 public count;  // Auto-generates: function count() public view returns (uint256)
+}
+
+// ✅ Works - public getter exists
+stdStorage
+    .target(address(myContract))
+    .sig("count()")  // Can call this!
+    .checked_write(42);
+```
+2. Private Variable (❌ stdStorage Doesn't Work)
+```solidity
+contract MyContract {
+    uint256 private count;  // No public getter!
+
+    function getCount() public view returns (uint256) {
+        return count;
+    }
+}
+
+// ❌ This won't work - no count() getter
+stdStorage
+    .target(address(myContract))
+    .sig("count()")  // Error! Function doesn't exist
+    .checked_write(42);
+
+// ⚠️ This might work if getCount() directly returns count
+stdStorage
+    .target(address(myContract))
+    .sig("getCount()")  // Might work if it's simple enough
+    .checked_write(42);
+
+// ✅ But you can use vm.store directly!
+bytes32 slot = bytes32(uint256(0));  // count is in slot 0
+vm.store(address(myContract), slot, bytes32(uint256(42)));
+```
+3. Internal Variable (❌ stdStorage Doesn't Work)
+```solidity
+contract MyContract {
+    uint256 internal count;  // No public getter
+
+    function getCount() public view returns (uint256) {
+        return count;
+    }
+}
+
+// ❌ stdStorage won't work directly
+// ✅ Use vm.store instead
+vm.store(address(myContract), bytes32(uint256(0)), bytes32(uint256(42)));
+```
+4. View/Pure Functions (✅ Works)
+```solidity
+contract MyContract {
+    uint256 public count;  // Generates: function count() public view returns (uint256)
+}
+
+// ✅ Works perfectly - view is about mutability, not visibility
+stdStorage
+    .target(address(myContract))
+    .sig("count()")  // This is a view function, works fine!
+    .checked_write(42);
+```
+Complete Test Exam*ple*
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "forge-std/Test.sol";
+
+contract StorageExample {
+    uint256 public publicVar = 1;      // Slot 0
+    uint256 internal internalVar = 2;  // Slot 1
+    uint256 private privateVar = 3;    // Slot 2
+
+    mapping(address => uint256) public publicMapping;    // Slot 3
+    mapping(address => uint256) internal internalMapping; // Slot 4
+    mapping(address => uint256) private privateMapping;   // Slot 5
+
+    // Getters for internal/private
+    function getInternal() public view returns (uint256) {
+        return internalVar;
+    }
+
+    function getPrivate() public view returns (uint256) {
+        return privateVar;
+    }
+
+    function getInternalMapping(address key) public view returns (uint256) {
+        return internalMapping[key];
+    }
+}
+
+contract StorageVisibilityTest is Test {
+    using stdStorage for StdStorage;
+
+    StorageExample example;
+    address user = address(0x123);
+
+    function setUp() public {
+        example = new StorageExample();
+    }
+
+    // ✅ Public variable - stdStorage works
+    function test_PublicVariable() public {
+        stdStorage
+            .target(address(example))
+            .sig("publicVar()")
+            .checked_write(100);
+
+        assertEq(example.publicVar(), 100);
+    }
+
+    // ❌ Internal variable - stdStorage doesn't work, use vm.store
+    function test_InternalVariable() public {
+        // This would fail:
+        // stdStorage.target(address(example)).sig("internalVar()").checked_write(200);
+
+        // ✅ Use vm.store instead
+        bytes32 slot = bytes32(uint256(1));  // internalVar is in slot 1
+        vm.store(address(example), slot, bytes32(uint256(200)));
+
+        // Verify using the getter
+        assertEq(example.getInternal(), 200);
+    }
+
+    // ❌ Private variable - stdStorage doesn't work, use vm.store
+    function test_PrivateVariable() public {
+        // ✅ Use vm.store
+        bytes32 slot = bytes32(uint256(2));  // privateVar is in slot 2
+        vm.store(address(example), slot, bytes32(uint256(300)));
+
+        assertEq(example.getPrivate(), 300);
+    }
+
+    // ✅ Public mapping - stdStorage works
+    function test_PublicMapping() public {
+        stdStorage
+            .target(address(example))
+            .sig("publicMapping(address)")
+            .with_key(user)
+            .checked_write(1000);
+
+        assertEq(example.publicMapping(user), 1000);
+    }
+
+    // ❌ Internal mapping - use vm.store
+    function test_InternalMapping() public {
+        // Calculate slot for mapping
+        bytes32 slot = keccak256(abi.encode(user, 4));  // Slot 4 is internalMapping
+        vm.store(address(example), slot, bytes32(uint256(2000)));
+
+        assertEq(example.getInternalMapping(user), 2000);
+    }
+
+    // ❌ Private mapping - use vm.store
+    function test_PrivateMapping() public {
+        // Calculate slot for mapping
+        bytes32 slot = keccak256(abi.encode(user, 5));  // Slot 5 is privateMapping
+        vm.store(address(example), slot, bytes32(uint256(3000)));
+
+        // Can verify by reading storage directly
+        uint256 value = uint256(vm.load(address(example), slot));
+        assertEq(value, 3000);
+    }
+}
+```
+### Finding Slot Numbers for Private/Internal Variables
+
+Method 1: Use forge inspect
+
+# Get storage layout
+forge inspect MyContract storage-layout
+```solidity
+# Output shows slot numbers for all variables:
+# {
+#   "storage": [
+#     {"label": "publicVar", "slot": "0", "type": "uint256"},
+#     {"label": "internalVar", "slot": "1", "type": "uint256"},
+#     {"label": "privateVar", "slot": "2", "type": "uint256"}
+#   ]
+# }
+```
+Method 2: Manual Calculation
+```solidity
+contract MyContract {
+    uint256 public a;      // Slot 0
+    uint256 internal b;    // Slot 1
+    uint256 private c;     // Slot 2
+    mapping(address => uint256) public d;     // Slot 3
+    mapping(address => uint256) internal e;   // Slot 4
+}
+
+// Accessing internal variable b (slot 1):
+vm.store(address(myContract), bytes32(uint256(1)), bytes32(uint256(newValue)));
+
+// Accessing internal mapping e[user] (slot 4):
+bytes32 slot = keccak256(abi.encode(user, 4));
+vm.store(address(myContract), slot, bytes32(uint256(newValue)));
+```
+Method 3: Use vm.load() to Inspect
+```solidity
+function test_FindSlotNumber() public {
+    MyContract c = new MyContract();
+    
+    // Read from slot 0
+    bytes32 value0 = vm.load(address(c), bytes32(uint256(0)));
+    console.log("Slot 0:", uint256(value0));
+    
+    // Read from slot 1  
+    bytes32 value1 = vm.load(address(c), bytes32(uint256(1)));
+    console.log("Slot 1:", uint256(value1));
+    
+    // Read from slot 2
+    bytes32 value2 = vm.load(address(c), bytes32(uint256(2)));
+    console.log("Slot 2:", uint256(value2));
+}
+```
+*Workaround: Create Helper Getters for Testing*
+```solidity
+contract MyContract {
+    uint256 private count;
+    mapping(address => uint256) private balances;
+
+    // Production code...
+
+    // Test helpers (only in test builds or test contracts)
+    function TEST_getCount() public view returns (uint256) {
+        return count;
+    }
+
+    function TEST_getBalance(address user) public view returns (uint256) {
+        return balances[user];
+    }
+}
+
+// Now you can use stdStorage:
+stdStorage
+    .target(address(myContract))
+    .sig("TEST_getCount()")  // ✅ Works!
+    .checked_write(42);
+```
+Summary Table
+
+| Visibility        | Has Public Getter? | stdStorage Works? | Alternative                                                  |
+|-------------------|--------------------|-------------------|--------------------------------------------------------------|
+| public            | ✅ Yes             | ✅ Yes            | -                                                            |
+| external          | ✅ Yes             | ✅ Yes            | -                                                            |
+| internal          | ❌ No              | ❌ No             | vm.store() + manual slot calculation                         |
+| private           | ❌ No              | ❌ No             | vm.store() + manual slot calculation                         |
+| view (mutability) | N/A                | ✅ Yes            | Works with any visibility that's public/external             |
+| pure (mutability) | N/A                | ⚠️ Maybe          | Works only if function reads from storage despite being pure |
+
+Best Practice Recommendations
+
+✅ For Public/External Variables:
+
+// Use stdStorage - clean and maintainable
+stdStorage
+    .target(address(contract))
+    .sig("publicVar()")
+    .checked_write(newValue);
+
+✅ For Internal/Private Variables:
+
+// Option 1: Use forge inspect to find slot
+// forge inspect MyContract storage-layout
+
+// Option 2: Calculate slot manually
+bytes32 slot = bytes32(uint256(slotNumber));
+vm.store(address(contract), slot, bytes32(uint256(newValue)));
+
+// Option 3: Add test helper getters
+// function TEST_getPrivateVar() public view returns (uint256) { return privateVar; }
+
+✅ For Internal/Private Mappings:
+
+// Calculate slot with keccak256
+bytes32 slot = keccak256(abi.encode(key, baseSlot));
+vm.store(address(contract), slot, bytes32(uint256(newValue)));
+
+Key Takeaways
+
+1. stdStorage needs a PUBLIC/EXTERNAL function to work with .sig()
+2. Private/Internal variables don't have public getters, so stdStorage can't use them
+3. Use vm.store() and vm.load() for private/internal storage manipulation
+4. view/pure are about mutability, not visibility - they work fine if the function is public/external
+5. Use forge inspect storage-layout to find slot numbers for private/internal variables
+6. vm.store() works on ANY storage slot regardless of visibility - it's bytecode-level access
+
+Bottom line: stdStorage is limited to public/external getters. For private/internal variables, you'll need to use vm.store() with manual slot calculation, but this still works perfectly fine!

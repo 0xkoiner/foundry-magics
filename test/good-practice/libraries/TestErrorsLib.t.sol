@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
-import {ErrorsLib} from "src/good-practice/libraries/ErrorsLib.sol";
-import {Test, console2 as console} from "lib/forge-std/src/Test.sol";
+import { ErrorsLib } from "src/good-practice/libraries/ErrorsLib.sol";
+import { Test, console2 as console } from "lib/forge-std/src/Test.sol";
 
 contract TestErrorsLib is Test {
     function test_string_errors() external view {

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
+import { Test } from "lib/forge-std/src/Test.sol";
 import { EventsLib } from "src/good-practice/libraries/EventsLib.sol";
-import { Test, console2 as console } from "lib/forge-std/src/Test.sol";
 
 contract TestEventsLib is Test {
     function test_events() external {

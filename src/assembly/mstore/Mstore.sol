@@ -4,7 +4,8 @@ pragma solidity 0.8.34;
 bytes32 constant __FF__ = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
 
 contract MstoreA {
-    function writeMemoryYul() external pure returns (bytes32 res) { // 320 gas
+    function writeMemoryYul() external pure returns (bytes32 res) {
+        // 320 gas
         assembly {
             mstore(0x00, __FF__)
             res := mload(0x00)
@@ -13,7 +14,8 @@ contract MstoreA {
 }
 
 contract MstoreB {
-    function writeMemoryYul() external pure returns (bytes32 res) { // 322 gas
+    function writeMemoryYul() external pure returns (bytes32 res) {
+        // 322 gas
         assembly {
             mstore(0x20, __FF__)
             res := mload(0x20)
@@ -22,7 +24,8 @@ contract MstoreB {
 }
 
 contract MstoreC {
-    function writeMemoryYul() external pure returns (bytes32 res) { // 324 gas
+    function writeMemoryYul() external pure returns (bytes32 res) {
+        // 324 gas
         assembly {
             mstore(0x40, __FF__)
             res := mload(0x40)
@@ -32,7 +35,8 @@ contract MstoreC {
 }
 
 contract MstoreD {
-    function writeMemoryYul() external pure returns (bytes32 res) { // 322 gas
+    function writeMemoryYul() external pure returns (bytes32 res) {
+        // 322 gas
         assembly {
             mstore(0x60, __FF__)
             res := mload(0x60)

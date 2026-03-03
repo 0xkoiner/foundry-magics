@@ -46,4 +46,3 @@ solady-v0.1.26/=lib/solady-v0.1.26/src/
 openzeppelin-contracts-v5.5.0/=lib/openzeppelin-contracts-v5.5.0/contracts/
 ```
 
-source: https://getfoundry.sh/forge/reference/install#forge-install
